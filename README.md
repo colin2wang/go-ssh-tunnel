@@ -12,6 +12,12 @@ A GUI-based SSH tunnel manager built with Go and Fyne. Easily manage multiple po
 - **Password File** - Secure password storage in separate file (git-ignored)
 - **Configurable** - YAML-based configuration for easy customization
 
+## Screenshot
+
+![SSH Tunnel Manager](docs/screenshot.png)
+
+The main interface displays a list of configured tunnels with their status, local/remote ports, and real-time traffic statistics (upload/download rates and total data transferred).
+
 ## Installation
 
 ### Download
