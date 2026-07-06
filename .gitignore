@@ -7,6 +7,9 @@ dist/
 # Config Original
 configs/config.yaml
 
+# Generated resource files
+*.syso
+
 
 
 
