@@ -1,0 +1,24 @@
+ssh:
+  host: "your-server.com"
+  port: 22
+  user: "your-username"
+  auth:
+    method: "password"
+    password_file: "password.txt"
+    key_file: "~/.ssh/id_rsa"
+    key_passphrase_file: ""
+
+tunnels:
+  - name: "MySQL"
+    local_port: 3306
+    remote_host: "127.0.0.1"
+    remote_port: 3306
+
+  - name: "Redis"
+    local_port: 6379
+    remote_host: "127.0.0.1"
+    remote_port: 6379
+
+options:
+  server_alive_interval: 15
+  server_alive_count_max: 3

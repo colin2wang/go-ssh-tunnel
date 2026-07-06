@@ -1,0 +1,12 @@
+# JetBrains
+.idea/
+
+# Dist
+dist/
+
+# Config Original
+configs/config.yaml
+
+
+
+
