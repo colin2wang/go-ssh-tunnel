@@ -6,17 +6,23 @@ A GUI-based SSH tunnel manager built with Go and Fyne. Easily manage multiple po
 
 - **GUI Interface** - Clean, intuitive interface built with Fyne
 - **Multiple Tunnels** - Manage multiple SSH port forwards simultaneously
+- **Individual Tunnel Control** - Enable/disable tunnels individually with checkboxes
 - **Real-time Traffic** - Monitor upload/download rates and total traffic
-- **System Tray** - Minimize to system tray with show/quit menu
+- **System Tray** - Minimize to system tray with Connect/Disconnect/Quit menu
 - **Auto-reconnect** - Keepalive mechanism to maintain connections
 - **Password File** - Secure password storage in separate file (git-ignored)
 - **Configurable** - YAML-based configuration for easy customization
+- **Structured Logs** - Timestamped logs with level indicators (INFO/WARN/ERROR)
 
 ## Screenshot
 
 ![SSH Tunnel Manager](docs/screenshot.png)
 
-The main interface displays a list of configured tunnels with their status, local/remote ports, and real-time traffic statistics (upload/download rates and total data transferred).
+The main interface features:
+- **Toolbar** - Start, Stop, Reload Config, and Minimize to Tray buttons
+- **Tunnel List** - Each tunnel shows checkbox, name with port, connection status, and traffic stats
+- **Log Panel** - Structured logs with timestamp, level (INFO/ERROR), and messages
+- **Status Bar** - Shows current connection status (Disconnected/Connected)
 
 ## Installation
 
@@ -102,6 +108,37 @@ auth:
   key_file: "~/.ssh/id_rsa"
   key_passphrase_file: ""  # Leave empty to prompt on connect
 ```
+
+## UI Controls
+
+### Toolbar
+
+- **Start** - Connect to SSH server and start all enabled tunnels
+- **Stop** - Disconnect from SSH server and stop all tunnels
+- **Reload Config** - Reload configuration file and reset connections
+- **Minimize to Tray** - Hide window to system tray
+
+### Tunnel List
+
+Each tunnel displays:
+- Checkbox to enable/disable individual tunnels
+- Status indicator (Gray=Disconnected, Green=Connected, Red=Error)
+- Tunnel name and port mapping
+- Real-time traffic stats: `↑ rate (total) | ↓ rate (total)`
+
+### System Tray
+
+Right-click the tray icon for:
+- **Show Window** - Toggle window visibility
+- **Connect** - Start all tunnels
+- **Disconnect** - Stop all tunnels
+- **Quit** - Exit application
+
+### Log Panel
+
+- Filter logs by level (DEBUG, INFO, WARN, ERROR)
+- Auto-scrolls to latest entries
+- Structured format: `YYYY-MM-DD HH:MM:SS | LEVEL | Message`
 
 ## Build Output
 
