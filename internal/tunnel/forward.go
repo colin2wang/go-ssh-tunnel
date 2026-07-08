@@ -48,6 +48,7 @@ type Forward struct {
 	clients []net.Conn
 	stopCh  chan struct{}
 	logger  *log.Logger
+	LogFunc func(string) // callback for UI log panel
 }
 
 func NewForward(name string, localPort int, remoteHost string, remotePort int, logger *log.Logger) *Forward {
@@ -63,6 +64,13 @@ func NewForward(name string, localPort int, remoteHost string, remotePort int, l
 	}
 }
 
+func (f *Forward) log(msg string) {
+	f.logger.Print(msg)
+	if f.LogFunc != nil {
+		f.LogFunc(msg)
+	}
+}
+
 func (f *Forward) Start(sshClient *ssh.Client) error {
 	f.mu.Lock()
 	f.Status = StatusConnecting
@@ -75,6 +83,7 @@ func (f *Forward) Start(sshClient *ssh.Client) error {
 		f.Status = StatusError
 		f.Error = err.Error()
 		f.mu.Unlock()
+		f.log(fmt.Sprintf("[%s] Error: %v", f.Name, err))
 		return fmt.Errorf("listen on %s: %w", listenAddr, err)
 	}
 
@@ -84,7 +93,7 @@ func (f *Forward) Start(sshClient *ssh.Client) error {
 	f.Error = ""
 	f.mu.Unlock()
 
-	f.logger.Printf("[%s] Listening on %s -> %s:%d", f.Name, listenAddr, f.RemoteHost, f.RemotePort)
+	f.log(fmt.Sprintf("[%s] Listening on %s -> %s:%d", f.Name, listenAddr, f.RemoteHost, f.RemotePort))
 
 	go f.acceptLoop(sshClient)
 	return nil
@@ -108,7 +117,7 @@ func (f *Forward) acceptLoop(sshClient *ssh.Client) {
 			if stopped {
 				return
 			}
-			f.logger.Printf("[%s] Accept error: %v", f.Name, err)
+			f.log(fmt.Sprintf("[%s] Accept error: %v", f.Name, err))
 			continue
 		}
 
@@ -126,13 +135,13 @@ func (f *Forward) handleConn(sshClient *ssh.Client, localConn net.Conn) {
 	remoteAddr := fmt.Sprintf("%s:%d", f.RemoteHost, f.RemotePort)
 	remoteConn, err := sshClient.Dial("tcp", remoteAddr)
 	if err != nil {
-		f.logger.Printf("[%s] Dial remote %s failed: %v", f.Name, remoteAddr, err)
+		f.log(fmt.Sprintf("[%s] Dial remote %s failed: %v", f.Name, remoteAddr, err))
 		f.removeClient(localConn)
 		return
 	}
 	defer remoteConn.Close()
 
-	f.logger.Printf("[%s] Connection established to %s", f.Name, remoteAddr)
+	f.log(fmt.Sprintf("[%s] Connection established to %s", f.Name, remoteAddr))
 
 	done := make(chan struct{}, 2)
 
@@ -150,7 +159,7 @@ func (f *Forward) handleConn(sshClient *ssh.Client, localConn net.Conn) {
 
 	<-done
 	f.removeClient(localConn)
-	f.logger.Printf("[%s] Connection to %s closed", f.Name, remoteAddr)
+	f.log(fmt.Sprintf("[%s] Connection to %s closed", f.Name, remoteAddr))
 }
 
 func (f *Forward) removeClient(conn net.Conn) {

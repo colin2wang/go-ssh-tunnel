@@ -93,8 +93,11 @@ func (m *Manager) Start() error {
 
 	for _, tc := range m.cfg.Tunnels {
 		fwd := NewForward(tc.Name, tc.LocalPort, tc.RemoteHost, tc.RemotePort, m.logger)
+		fwd.LogFunc = m.LogFunc
 		if err := fwd.Start(client); err != nil {
 			m.log("[%s] Failed to start: %v", tc.Name, err)
+		} else {
+			m.log("[%s] Public: %s:%d", tc.Name, m.cfg.SSH.Host, tc.LocalPort)
 		}
 		m.mu.Lock()
 		m.forwards = append(m.forwards, fwd)

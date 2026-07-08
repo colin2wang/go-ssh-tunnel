@@ -1,14 +1,22 @@
 # JetBrains
 .idea/
 
-# Dist
+# Dist and Binaries
 dist/
+*.exe
 
 # Config Original
 configs/config.yaml
 
 # Generated resource files
 *.syso
+
+# Log files
+logs/
+
+# AI Coder
+.mimocode/
+.atomcode/
 
 
 

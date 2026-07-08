@@ -61,9 +61,11 @@ func NewApp(cfg *config.Config, cfgPath string, version string) *App {
 		version:    version,
 	}
 
-	// Set up minimize to tray behavior
+	// Close button quits the application
 	w.SetCloseIntercept(func() {
-		w.Hide()
+		mgr.Stop()
+		systray.Quit()
+		fyne.CurrentApp().Quit()
 	})
 
 	mgr.SetCallbacks(
@@ -142,6 +144,10 @@ func (a *App) buildUI() fyne.CanvasObject {
 	a.stopBtn = widget.NewButton("Stop", a.onStop)
 	a.stopBtn.Disable()
 	a.reloadBtn = widget.NewButton("Reload Config", a.onReload)
+	minimizeBtn := widget.NewButton("Minimize to Tray", func() {
+		a.logPanel.Append(LogLevelInfo, "UI | Window minimized to tray")
+		a.mainWindow.Hide()
+	})
 
 	a.statusLabel = widget.NewLabel("Disconnected")
 	a.statusLabel.Importance = widget.MediumImportance
@@ -150,6 +156,7 @@ func (a *App) buildUI() fyne.CanvasObject {
 		a.startBtn,
 		a.stopBtn,
 		a.reloadBtn,
+		minimizeBtn,
 		layout.NewSpacer(),
 		widget.NewLabel("Status:"),
 		a.statusLabel,
@@ -186,6 +193,8 @@ func (a *App) buildUI() fyne.CanvasObject {
 }
 
 func (a *App) onStart() {
+	a.logPanel.Append(LogLevelInfo, "UI | Start button clicked")
+
 	if a.cfg.SSH.Auth.Method == "password" {
 		pass, _ := a.cfg.ReadPassword()
 		if pass == "" {
@@ -227,6 +236,7 @@ func (a *App) promptPassword(callback func(string)) {
 func (a *App) startTunnel(password string) {
 	fyne.Do(func() {
 		a.startBtn.Disable()
+		a.logPanel.Append(LogLevelInfo, "Tunnel | Starting with password auth...")
 	})
 
 	if password != "" {
@@ -242,7 +252,7 @@ func (a *App) startTunnel(password string) {
 
 	if err := a.manager.Start(); err != nil {
 		fyne.Do(func() {
-			a.logPanel.Append(LogLevelError, fmt.Sprintf("ERROR: %v", err))
+			a.logPanel.Append(LogLevelError, fmt.Sprintf("Tunnel | Start failed: %v", err))
 			a.startBtn.Enable()
 		})
 		return
@@ -251,12 +261,14 @@ func (a *App) startTunnel(password string) {
 	fyne.Do(func() {
 		a.stopBtn.Enable()
 		a.tunnelList.Refresh()
+		a.logPanel.Append(LogLevelInfo, "Tunnel | Started successfully")
 	})
 }
 
 func (a *App) startTunnelWithKeyPass(passphrase string) {
 	fyne.Do(func() {
 		a.startBtn.Disable()
+		a.logPanel.Append(LogLevelInfo, "Tunnel | Starting with key auth...")
 	})
 
 	tmpFile := "secrets/.tmp_keypass"
@@ -269,7 +281,7 @@ func (a *App) startTunnelWithKeyPass(passphrase string) {
 
 	if err := a.manager.Start(); err != nil {
 		fyne.Do(func() {
-			a.logPanel.Append(LogLevelError, fmt.Sprintf("ERROR: %v", err))
+			a.logPanel.Append(LogLevelError, fmt.Sprintf("Tunnel | Start failed: %v", err))
 			a.startBtn.Enable()
 		})
 		return
@@ -278,10 +290,12 @@ func (a *App) startTunnelWithKeyPass(passphrase string) {
 	fyne.Do(func() {
 		a.stopBtn.Enable()
 		a.tunnelList.Refresh()
+		a.logPanel.Append(LogLevelInfo, "Tunnel | Started successfully")
 	})
 }
 
 func (a *App) onStop() {
+	a.logPanel.Append(LogLevelInfo, "UI | Stop button clicked")
 	a.stopBtn.Disable()
 	a.startBtn.Disable()
 	go func() {
@@ -289,6 +303,7 @@ func (a *App) onStop() {
 		fyne.Do(func() {
 			a.startBtn.Enable()
 			a.tunnelList.Refresh()
+			a.logPanel.Append(LogLevelInfo, "Tunnel | Stopped")
 		})
 	}()
 }
@@ -299,9 +314,22 @@ func (a *App) onReload() {
 		dialog.ShowError(err, a.mainWindow)
 		return
 	}
+
+	// Stop old tunnels if running (blocking call)
+	if a.manager != nil && a.manager.IsRunning() {
+		a.manager.Stop()
+		a.logPanel.Append(LogLevelInfo, "Reload | Stopped old tunnels")
+	}
+
 	a.cfg = cfg
 	a.manager = tunnel.NewManager(cfg)
 	a.tunnelList.SetManager(a.manager)
+
+	// Reset button states and status label
+	a.startBtn.Enable()
+	a.stopBtn.Disable()
+	a.statusLabel.SetText("Disconnected")
+
 	a.logPanel.AppendInfo("Config reloaded")
 	a.tunnelList.Refresh()
 }
@@ -339,12 +367,8 @@ func NewTunnelList(cfg *config.Config, mgr *tunnel.Manager) *TunnelList {
 			nameLabel.TextStyle = fyne.TextStyle{Bold: true}
 			portLabel := widget.NewLabel("12345 -> 127.0.0.1:12345")
 			statusLabel := widget.NewLabel("Disconnected")
-			rateUpLabel := widget.NewLabel("0 B/s")
-			rateUpLabel.Alignment = fyne.TextAlignTrailing
-			rateDownLabel := widget.NewLabel("0 B/s")
-			rateDownLabel.Alignment = fyne.TextAlignTrailing
-			totalLabel := widget.NewLabel("0 B / 0 B")
-			totalLabel.Alignment = fyne.TextAlignTrailing
+			trafficLabel := widget.NewLabel("↑ 0 B/s (0 B) | ↓ 0 B/s (0 B)")
+			trafficLabel.Alignment = fyne.TextAlignTrailing
 
 			leftCol := container.NewVBox(
 				nameLabel,
@@ -352,13 +376,7 @@ func NewTunnelList(cfg *config.Config, mgr *tunnel.Manager) *TunnelList {
 			)
 			rightCol := container.NewVBox(
 				statusLabel,
-				container.NewHBox(
-					widget.NewLabel("↑"),
-					rateUpLabel,
-					widget.NewLabel("↓"),
-					rateDownLabel,
-				),
-				totalLabel,
+				trafficLabel,
 			)
 
 			return container.NewHBox(
@@ -406,14 +424,14 @@ func NewTunnelList(cfg *config.Config, mgr *tunnel.Manager) *TunnelList {
 			rightCol := box.Objects[4].(*fyne.Container)
 			rightCol.Objects[0].(*widget.Label).SetText(status.String())
 
-			// Rate row
-			rateRow := rightCol.Objects[1].(*fyne.Container)
-			rateRow.Objects[1].(*widget.Label).SetText(tunnel.FormatRate(rateUp))
-			rateRow.Objects[3].(*widget.Label).SetText(tunnel.FormatRate(rateDown))
-
-			// Total
-			rightCol.Objects[2].(*widget.Label).SetText(
-				fmt.Sprintf("%s / %s", tunnel.FormatBytes(totalUp), tunnel.FormatBytes(totalDown)),
+			// Combined traffic: ↑ rate (total) | ↓ rate (total)
+			rightCol.Objects[1].(*widget.Label).SetText(
+				fmt.Sprintf("↑ %s (%s) | ↓ %s (%s)",
+					tunnel.FormatRate(rateUp),
+					tunnel.FormatBytes(totalUp),
+					tunnel.FormatRate(rateDown),
+					tunnel.FormatBytes(totalDown),
+				),
 			)
 		},
 	)
@@ -453,10 +471,10 @@ var logLevelNames = map[LogLevel]string{
 }
 
 var logLevelPrefixes = map[LogLevel]string{
-	LogLevelDebug: "[DEBUG] ",
-	LogLevelInfo:  "[INFO]  ",
-	LogLevelWarn:  "[WARN]  ",
-	LogLevelError: "[ERROR] ",
+	LogLevelDebug: "DEBUG",
+	LogLevelInfo:  "INFO ",
+	LogLevelWarn:  "WARN ",
+	LogLevelError: "ERROR",
 }
 
 type logEntry struct {
@@ -508,6 +526,7 @@ func NewLogPanel() *LogPanel {
 	}, func(s string) {
 		for lvl, name := range logLevelNames {
 			if name == s {
+				lp.Append(LogLevelInfo, fmt.Sprintf("UI | Log level changed to %s", s))
 				lp.SetMinLevel(lvl)
 				break
 			}
@@ -528,6 +547,18 @@ func NewLogPanel() *LogPanel {
 				lp.entry.SetText(rendered)
 			}
 		})
+		// Delay cursor update to ensure layout is calculated
+		go func() {
+			time.Sleep(10 * time.Millisecond)
+			fyne.Do(func() {
+				if lp.entry.Text == rendered {
+					rowCount := strings.Count(rendered, "\n") + 1
+					lp.entry.CursorRow = rowCount - 1
+					lp.entry.CursorColumn = 0
+					canvas.Refresh(lp.entry)
+				}
+			})
+		}()
 	}
 
 	// Create logs directory and file
@@ -562,9 +593,9 @@ func (lp *LogPanel) Append(level LogLevel, msg string) {
 	lp.mu.Lock()
 	defer lp.mu.Unlock()
 
-	timestamp := time.Now().Format("15:04:05")
-	prefix := logLevelPrefixes[level]
-	line := fmt.Sprintf("[%s]%s%s", timestamp, prefix, msg)
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	levelName := logLevelPrefixes[level]
+	line := fmt.Sprintf("%s | %s | %s", timestamp, levelName, msg)
 
 	lp.entries = append(lp.entries, logEntry{level: level, message: line})
 
@@ -584,9 +615,17 @@ func (lp *LogPanel) Append(level LogLevel, msg string) {
 		rendered := lp.renderEntriesUnlocked()
 		fyne.Do(func() {
 			lp.entry.SetText(rendered)
-			rowCount := strings.Count(rendered, "\n") + 1
-			lp.entry.CursorRow = rowCount - 1
 		})
+		// Delay cursor update to ensure layout is calculated
+		go func() {
+			time.Sleep(10 * time.Millisecond)
+			fyne.Do(func() {
+				rowCount := strings.Count(rendered, "\n") + 1
+				lp.entry.CursorRow = rowCount - 1
+				lp.entry.CursorColumn = 0
+				canvas.Refresh(lp.entry)
+			})
+		}()
 	}
 }
 
@@ -606,6 +645,16 @@ func (lp *LogPanel) SetMinLevel(level LogLevel) {
 	fyne.Do(func() {
 		lp.entry.SetText(rendered)
 	})
+	// Delay cursor update to ensure layout is calculated
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		fyne.Do(func() {
+			rowCount := strings.Count(rendered, "\n") + 1
+			lp.entry.CursorRow = rowCount - 1
+			lp.entry.CursorColumn = 0
+			canvas.Refresh(lp.entry)
+		})
+	}()
 }
 
 // Clear removes all log entries
