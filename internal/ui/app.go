@@ -340,6 +340,7 @@ type TunnelList struct {
 	manager *tunnel.Manager
 	list    *widget.List
 	data    []config.TunnelConfig
+	enabled map[int]bool // track which tunnels are enabled by index
 	mu      sync.Mutex
 }
 
@@ -357,34 +358,38 @@ func statusColor(status tunnel.ForwardStatus) color.Color {
 }
 
 func NewTunnelList(cfg *config.Config, mgr *tunnel.Manager) *TunnelList {
-	tl := &TunnelList{cfg: cfg, manager: mgr}
+	tl := &TunnelList{cfg: cfg, manager: mgr, enabled: make(map[int]bool)}
 	tl.data = cfg.Tunnels
+	// Initialize all tunnels as enabled
+	for i := range tl.data {
+		tl.enabled[i] = true
+	}
 	tl.list = widget.NewList(
 		func() int { return len(tl.data) },
 		func() fyne.CanvasObject {
-			// Card layout: status dot | name & port | traffic info
-			nameLabel := widget.NewLabel("Name")
+			// Layout: checkbox | dot | name (port) ... status | ↑ rate (total) | ↓ rate (total)
+			check := widget.NewCheck("", nil)
+			dot := canvas.NewCircle(color.Gray{Y: 100})
+			nameLabel := widget.NewLabel("Name (12345)")
 			nameLabel.TextStyle = fyne.TextStyle{Bold: true}
-			portLabel := widget.NewLabel("12345 -> 127.0.0.1:12345")
 			statusLabel := widget.NewLabel("Disconnected")
 			trafficLabel := widget.NewLabel("↑ 0 B/s (0 B) | ↓ 0 B/s (0 B)")
-			trafficLabel.Alignment = fyne.TextAlignTrailing
 
-			leftCol := container.NewVBox(
+			topRow := container.NewHBox(
 				nameLabel,
-				portLabel,
-			)
-			rightCol := container.NewVBox(
+				layout.NewSpacer(),
 				statusLabel,
+			)
+
+			infoCol := container.NewVBox(
+				topRow,
 				trafficLabel,
 			)
 
 			return container.NewHBox(
-				canvas.NewCircle(color.Gray{Y: 100}),
-				layout.NewSpacer(),
-				leftCol,
-				layout.NewSpacer(),
-				rightCol,
+				check,
+				dot,
+				infoCol,
 			)
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
@@ -393,6 +398,19 @@ func NewTunnelList(cfg *config.Config, mgr *tunnel.Manager) *TunnelList {
 			}
 			tc := tl.data[id]
 			box := obj.(*fyne.Container)
+
+			// Get checkbox
+			check := box.Objects[0].(*widget.Check)
+			check.SetChecked(tl.enabled[id])
+			check.OnChanged = func(checked bool) {
+				tl.mu.Lock()
+				tl.enabled[id] = checked
+				tl.mu.Unlock()
+				go tl.toggleTunnel(id, checked)
+			}
+
+			// Get status dot
+			dot := box.Objects[1].(*canvas.Circle)
 
 			// Find matching forward and get status/traffic
 			status := tunnel.StatusDisconnected
@@ -410,22 +428,24 @@ func NewTunnelList(cfg *config.Config, mgr *tunnel.Manager) *TunnelList {
 				}
 			}
 
-			// Update status dot color
-			box.Objects[0].(*canvas.Circle).FillColor = statusColor(status)
+			// Update dot color based on status
+			dot.FillColor = statusColor(status)
 
-			// Update left column (name & port)
-			leftCol := box.Objects[2].(*fyne.Container)
-			leftCol.Objects[0].(*widget.Label).SetText(tc.Name)
-			leftCol.Objects[1].(*widget.Label).SetText(
-				fmt.Sprintf("%d → %s:%d", tc.LocalPort, tc.RemoteHost, tc.RemotePort),
-			)
+			// Update info column
+			infoCol := box.Objects[2].(*fyne.Container)
+			topRow := infoCol.Objects[0].(*fyne.Container)
 
-			// Update right column (status & traffic)
-			rightCol := box.Objects[4].(*fyne.Container)
-			rightCol.Objects[0].(*widget.Label).SetText(status.String())
+			// Update name with port
+			nameLabel := topRow.Objects[0].(*widget.Label)
+			nameLabel.SetText(fmt.Sprintf("%s (%d)", tc.Name, tc.LocalPort))
 
-			// Combined traffic: ↑ rate (total) | ↓ rate (total)
-			rightCol.Objects[1].(*widget.Label).SetText(
+			// Update status
+			statusLabel := topRow.Objects[2].(*widget.Label)
+			statusLabel.SetText(status.String())
+
+			// Update traffic
+			trafficLabel := infoCol.Objects[1].(*widget.Label)
+			trafficLabel.SetText(
 				fmt.Sprintf("↑ %s (%s) | ↓ %s (%s)",
 					tunnel.FormatRate(rateUp),
 					tunnel.FormatBytes(totalUp),
@@ -436,6 +456,31 @@ func NewTunnelList(cfg *config.Config, mgr *tunnel.Manager) *TunnelList {
 		},
 	)
 	return tl
+}
+
+// toggleTunnel starts or stops a tunnel based on checkbox state
+func (tl *TunnelList) toggleTunnel(id int, enabled bool) {
+	if tl.manager == nil || !tl.manager.IsRunning() {
+		return
+	}
+
+	tc := tl.data[id]
+	if enabled {
+		// Start tunnel
+		if err := tl.manager.StartTunnel(tc); err != nil {
+			tl.manager.Log(fmt.Sprintf("[Tunnel] Failed to start %s: %v", tc.Name, err))
+		} else {
+			tl.manager.Log(fmt.Sprintf("[Tunnel] %s enabled", tc.Name))
+		}
+	} else {
+		// Stop tunnel
+		tl.manager.StopTunnel(tc.Name)
+		tl.manager.Log(fmt.Sprintf("[Tunnel] %s disabled", tc.Name))
+	}
+	// Refresh UI
+	fyne.Do(func() {
+		tl.list.Refresh()
+	})
 }
 
 func (tl *TunnelList) List() *widget.List { return tl.list }

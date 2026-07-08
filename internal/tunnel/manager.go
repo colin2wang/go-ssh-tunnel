@@ -47,6 +47,14 @@ func (m *Manager) log(format string, args ...interface{}) {
 	}
 }
 
+// Log is public version of log for external callers
+func (m *Manager) Log(msg string) {
+	m.logger.Print(msg)
+	if m.LogFunc != nil {
+		m.LogFunc(msg)
+	}
+}
+
 func (m *Manager) updateStatus(msg string) {
 	if m.StatusFunc != nil {
 		m.StatusFunc(msg)
@@ -163,6 +171,46 @@ func (m *Manager) AddTunnel(tc config.TunnelConfig) error {
 }
 
 func (m *Manager) RemoveTunnel(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for i, f := range m.forwards {
+		if f.Name == name {
+			f.Stop()
+			m.forwards = append(m.forwards[:i], m.forwards[i+1:]...)
+			return
+		}
+	}
+}
+
+// StartTunnel starts a single tunnel by config
+func (m *Manager) StartTunnel(tc config.TunnelConfig) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.sshClient == nil {
+		return fmt.Errorf("not connected")
+	}
+
+	// Check if already running
+	for _, f := range m.forwards {
+		if f.Name == tc.Name {
+			return fmt.Errorf("tunnel %s already running", tc.Name)
+		}
+	}
+
+	fwd := NewForward(tc.Name, tc.LocalPort, tc.RemoteHost, tc.RemotePort, m.logger)
+	fwd.LogFunc = m.LogFunc
+	if err := fwd.Start(m.sshClient); err != nil {
+		return err
+	}
+
+	m.forwards = append(m.forwards, fwd)
+	return nil
+}
+
+// StopTunnel stops a single tunnel by name
+func (m *Manager) StopTunnel(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
