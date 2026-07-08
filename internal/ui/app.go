@@ -25,13 +25,14 @@ import (
 )
 
 type App struct {
-	fyneApp    fyne.App
-	mainWindow fyne.Window
-	cfg        *config.Config
-	manager    *tunnel.Manager
-	cfgPath    string
-	version    string
-	tray       *systray.MenuItem
+	fyneApp       fyne.App
+	mainWindow    fyne.Window
+	cfg           *config.Config
+	manager       *tunnel.Manager
+	cfgPath       string
+	version       string
+	tray          *systray.MenuItem
+	windowVisible bool // track window visibility
 
 	// UI elements
 	startBtn    *widget.Button
@@ -68,6 +69,8 @@ func NewApp(cfg *config.Config, cfgPath string, version string) *App {
 		fyne.CurrentApp().Quit()
 	})
 
+	app.windowVisible = true
+
 	mgr.SetCallbacks(
 		func(msg string) { fyne.Do(func() { app.logPanel.AppendInfo(msg) }) },
 		func(msg string) { fyne.Do(func() { app.statusLabel.SetText(msg) }) },
@@ -94,14 +97,42 @@ func (a *App) Run() {
 
 			// Add menu items
 			showItem := systray.AddMenuItem("Show Window", "Show the main window")
+			systray.AddSeparator()
+			connectItem := systray.AddMenuItem("Connect", "Start all tunnels")
+			disconnectItem := systray.AddMenuItem("Disconnect", "Stop all tunnels")
+			systray.AddSeparator()
 			quitItem := systray.AddMenuItem("Quit", "Quit the application")
 
-			// Handle show click
+			// Handle show click - toggle window
 			go func() {
 				for range showItem.ClickedCh {
 					fyne.Do(func() {
-						a.mainWindow.Show()
-						a.mainWindow.RequestFocus()
+						if a.windowVisible {
+							a.mainWindow.Hide()
+							a.windowVisible = false
+						} else {
+							a.mainWindow.Show()
+							a.mainWindow.RequestFocus()
+							a.windowVisible = true
+						}
+					})
+				}
+			}()
+
+			// Handle connect click
+			go func() {
+				for range connectItem.ClickedCh {
+					fyne.Do(func() {
+						a.onStart()
+					})
+				}
+			}()
+
+			// Handle disconnect click
+			go func() {
+				for range disconnectItem.ClickedCh {
+					fyne.Do(func() {
+						a.onStop()
 					})
 				}
 			}()
