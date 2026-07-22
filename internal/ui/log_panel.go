@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -44,7 +44,8 @@ type logEntry struct {
 // LogPanel displays connection logs with level filtering and clean support.
 // It implements io.Writer so it can be used as log.SetOutput target.
 type LogPanel struct {
-	entry       *widget.Entry
+	scroll      *container.Scroll
+	label       *widget.Label
 	levelSelect *widget.Select
 	cleanBtn    *widget.Button
 	mu          sync.Mutex
@@ -55,20 +56,12 @@ type LogPanel struct {
 
 func NewLogPanel() *LogPanel {
 	lp := &LogPanel{
-		entry:    widget.NewMultiLineEntry(),
 		minLevel: LogLevelDebug,
 	}
-	lp.entry.Wrapping = fyne.TextWrapWord
-	lp.entry.TextStyle = fyne.TextStyle{Monospace: true}
-	// Read-only: ignore user edits by resetting text on change.
-	lp.entry.OnChanged = func(s string) {
-		lp.mu.Lock()
-		rendered := lp.renderEntriesUnlocked()
-		lp.mu.Unlock()
-		fyne.Do(func() {
-			lp.entry.SetText(rendered)
-		})
-	}
+	lp.label = widget.NewLabel("")
+	lp.label.Wrapping = fyne.TextWrapWord
+	lp.label.TextStyle = fyne.TextStyle{Monospace: true}
+	lp.scroll = container.NewVScroll(lp.label)
 
 	lp.levelSelect = widget.NewSelect([]string{
 		logLevelNames[LogLevelDebug],
@@ -99,7 +92,7 @@ func NewLogPanel() *LogPanel {
 	return lp
 }
 
-func (lp *LogPanel) Entry() *widget.Entry        { return lp.entry }
+func (lp *LogPanel) Content() fyne.CanvasObject  { return lp.scroll }
 func (lp *LogPanel) LevelSelect() *widget.Select { return lp.levelSelect }
 func (lp *LogPanel) CleanButton() *widget.Button { return lp.cleanBtn }
 
@@ -150,9 +143,9 @@ func (lp *LogPanel) Append(level LogLevel, msg string) {
 
 	if updateUI {
 		fyne.Do(func() {
-			lp.entry.SetText(rendered)
+			lp.label.SetText(rendered)
 		})
-		lp.scrollToBottom(rendered)
+		lp.scrollToBottom()
 	}
 }
 
@@ -174,9 +167,9 @@ func (lp *LogPanel) SetMinLevel(level LogLevel) {
 	lp.mu.Unlock()
 
 	fyne.Do(func() {
-		lp.entry.SetText(rendered)
+		lp.label.SetText(rendered)
 	})
-	lp.scrollToBottom(rendered)
+	lp.scrollToBottom()
 }
 
 // Clean removes all log entries.
@@ -186,7 +179,7 @@ func (lp *LogPanel) Clean() {
 	lp.mu.Unlock()
 
 	fyne.Do(func() {
-		lp.entry.SetText("")
+		lp.label.SetText("")
 	})
 }
 
@@ -201,14 +194,18 @@ func (lp *LogPanel) renderEntriesUnlocked() string {
 }
 
 // scrollToBottom keeps the view pinned to the latest line after a SetText.
-func (lp *LogPanel) scrollToBottom(rendered string) {
+func (lp *LogPanel) scrollToBottom() {
 	go func() {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		fyne.Do(func() {
-			rowCount := strings.Count(rendered, "\n") + 1
-			lp.entry.CursorRow = rowCount - 1
-			lp.entry.CursorColumn = 0
-			canvas.Refresh(lp.entry)
+			contentHeight := lp.label.MinSize().Height
+			viewportHeight := lp.scroll.Size().Height
+			if contentHeight > viewportHeight {
+				lp.scroll.Offset = fyne.NewPos(0, contentHeight-viewportHeight)
+			} else {
+				lp.scroll.Offset = fyne.NewPos(0, 0)
+			}
+			lp.scroll.Refresh()
 		})
 	}()
 }

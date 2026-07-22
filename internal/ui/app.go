@@ -128,7 +128,7 @@ func (a *App) buildUI() fyne.CanvasObject {
 	)
 	rightPanel := container.NewPadded(container.NewBorder(
 		rightHeader, nil, nil, nil,
-		a.logPanel.Entry(),
+		a.logPanel.Content(),
 	))
 
 	// Split (draggable divider, scales with the window)
