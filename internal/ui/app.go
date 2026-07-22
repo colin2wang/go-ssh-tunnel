@@ -2,22 +2,16 @@ package ui
 
 import (
 	"fmt"
-	"image/color"
 	"log"
 	"os"
-	"runtime"
-	"strings"
-	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
-	"github.com/getlantern/systray"
 
 	"go-ssh-tunnel/internal/config"
 	"go-ssh-tunnel/internal/icon"
@@ -25,28 +19,31 @@ import (
 )
 
 type App struct {
-	fyneApp       fyne.App
-	mainWindow    fyne.Window
-	cfg           *config.Config
-	manager       *tunnel.Manager
-	cfgPath       string
-	version       string
-	tray          *systray.MenuItem
-	windowVisible bool // track window visibility
+	fyneApp    fyne.App
+	mainWindow fyne.Window
+	cfg        *config.Config
+	manager    *tunnel.Manager
+	cfgPath    string
+	version    string
 
 	// UI elements
 	startBtn    *widget.Button
 	stopBtn     *widget.Button
 	reloadBtn   *widget.Button
+	addBtn      *widget.Button
 	statusLabel *widget.Label
 	tunnelList  *TunnelList
 	logPanel    *LogPanel
+	statsBar    *statsBar
 }
 
 func NewApp(cfg *config.Config, cfgPath string, version string) *App {
 	a := app.New()
 	w := a.NewWindow(fmt.Sprintf("SSH Tunnel Manager v%s", version))
-	w.Resize(fyne.NewSize(1000, 650))
+	w.Resize(fyne.NewSize(1100, 720))
+	// Allow the window to shrink but keep a usable minimum via the content's
+	// natural minimum size (toolbar, stats bar, and list all contribute).
+	w.SetFixedSize(false)
 
 	// Set window icon
 	w.SetIcon(icon.AppIcon)
@@ -62,14 +59,10 @@ func NewApp(cfg *config.Config, cfgPath string, version string) *App {
 		version:    version,
 	}
 
-	// Close button quits the application
+	// Close button hides to tray instead of quitting
 	w.SetCloseIntercept(func() {
-		mgr.Stop()
-		systray.Quit()
-		fyne.CurrentApp().Quit()
+		app.hideToTray()
 	})
-
-	app.windowVisible = true
 
 	mgr.SetCallbacks(
 		func(msg string) { fyne.Do(func() { app.logPanel.AppendInfo(msg) }) },
@@ -86,70 +79,7 @@ func (a *App) Run() {
 	content := a.buildUI()
 	a.mainWindow.SetContent(content)
 	a.startTrafficRefresh()
-
-	// Set up system tray in background
-	go systray.Run(
-		func() {
-			// On ready
-			systray.SetIcon(icon.IconBytes)
-			systray.SetTitle("SSH Tunnel Manager")
-			systray.SetTooltip("SSH Tunnel Manager")
-
-			// Add menu items
-			showItem := systray.AddMenuItem("Show Window", "Show the main window")
-			systray.AddSeparator()
-			connectItem := systray.AddMenuItem("Connect", "Start all tunnels")
-			disconnectItem := systray.AddMenuItem("Disconnect", "Stop all tunnels")
-			systray.AddSeparator()
-			quitItem := systray.AddMenuItem("Quit", "Quit the application")
-
-			// Handle show click - toggle window
-			go func() {
-				for range showItem.ClickedCh {
-					fyne.Do(func() {
-						if a.windowVisible {
-							a.mainWindow.Hide()
-							a.windowVisible = false
-						} else {
-							a.mainWindow.Show()
-							a.mainWindow.RequestFocus()
-							a.windowVisible = true
-						}
-					})
-				}
-			}()
-
-			// Handle connect click
-			go func() {
-				for range connectItem.ClickedCh {
-					fyne.Do(func() {
-						a.onStart()
-					})
-				}
-			}()
-
-			// Handle disconnect click
-			go func() {
-				for range disconnectItem.ClickedCh {
-					fyne.Do(func() {
-						a.onStop()
-					})
-				}
-			}()
-
-			// Handle quit click
-			go func() {
-				for range quitItem.ClickedCh {
-					a.manager.Stop()
-					systray.Quit()
-					fyne.CurrentApp().Quit()
-				}
-			}()
-		},
-		func() {
-			// On exit
-		},
-	)
+	a.startTray()
 
 	a.mainWindow.ShowAndRun()
 }
@@ -159,68 +89,53 @@ func (a *App) startTrafficRefresh() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			if a.manager.IsRunning() {
-				fyne.Do(func() {
+			fyne.Do(func() {
+				if a.manager.IsRunning() {
 					a.tunnelList.Refresh()
-				})
-			}
+				}
+				a.statsBar.update(a.manager, a.cfg)
+			})
 		}
 	}()
 }
 
 func (a *App) buildUI() fyne.CanvasObject {
-	// Toolbar
-	a.startBtn = widget.NewButton("Start", a.onStart)
-	a.startBtn.Importance = widget.HighImportance
-	a.stopBtn = widget.NewButton("Stop", a.onStop)
-	a.stopBtn.Disable()
-	a.reloadBtn = widget.NewButton("Reload Config", a.onReload)
-	minimizeBtn := widget.NewButton("Minimize to Tray", func() {
-		a.logPanel.Append(LogLevelInfo, "UI | Window minimized to tray")
-		a.mainWindow.Hide()
-	})
-
 	a.statusLabel = widget.NewLabel("Disconnected")
 	a.statusLabel.Importance = widget.MediumImportance
 
-	toolbar := container.NewHBox(
-		a.startBtn,
-		a.stopBtn,
-		a.reloadBtn,
-		minimizeBtn,
-		layout.NewSpacer(),
-		widget.NewLabel("Status:"),
-		a.statusLabel,
-	)
-
 	// Left panel: unified tunnel list
 	a.tunnelList = NewTunnelList(a.cfg, a.manager)
+	a.tunnelList.onEdit = a.onEditTunnel
+	a.tunnelList.onDelete = a.onDeleteTunnel
 
+	leftHeader := container.NewHBox(
+		sectionLabel("Tunnels"),
+		layout.NewSpacer(),
+	)
 	leftPanel := container.NewBorder(
-		nil, nil, nil, nil,
+		leftHeader, nil, nil, nil,
 		a.tunnelList.List(),
 	)
 
 	// Right panel: logs
 	a.logPanel = NewLogPanel()
 
-	logToolbar := container.NewHBox(
-		widget.NewLabel("Logs"),
-		a.logPanel.LevelSelect(),
+	rightHeader := container.NewHBox(
+		sectionLabel("Logs"),
 		layout.NewSpacer(),
+		a.logPanel.LevelSelect(),
 		a.logPanel.CleanButton(),
 	)
-
-	rightPanel := container.NewBorder(
-		logToolbar, nil, nil, nil,
+	rightPanel := container.NewPadded(container.NewBorder(
+		rightHeader, nil, nil, nil,
 		a.logPanel.Entry(),
-	)
+	))
 
-	// Split
+	// Split (draggable divider, scales with the window)
 	split := container.NewHSplit(leftPanel, rightPanel)
-	split.Offset = 0.35
+	split.Offset = 0.38
 
-	return container.NewBorder(toolbar, nil, nil, nil, split)
+	return container.NewBorder(a.buildToolbar(), nil, nil, nil, split)
 }
 
 func (a *App) onStart() {
@@ -346,15 +261,35 @@ func (a *App) onReload() {
 		return
 	}
 
-	// Stop old tunnels if running (blocking call)
+	// Stop old tunnels off the UI thread: Stop's callbacks use fyne.Do,
+	// which deadlocks if invoked from the main thread.
 	if a.manager != nil && a.manager.IsRunning() {
-		a.manager.Stop()
-		a.logPanel.Append(LogLevelInfo, "Reload | Stopped old tunnels")
+		a.startBtn.Disable()
+		a.stopBtn.Disable()
+		go func() {
+			a.manager.Stop()
+			fyne.Do(func() {
+				a.applyReload(cfg)
+				a.logPanel.Append(LogLevelInfo, "Reload | Stopped old tunnels")
+			})
+		}()
+		return
 	}
 
+	a.applyReload(cfg)
+}
+
+// applyReload swaps in the freshly loaded config. Must be called on the UI
+// thread (directly, or via fyne.Do).
+func (a *App) applyReload(cfg *config.Config) {
 	a.cfg = cfg
 	a.manager = tunnel.NewManager(cfg)
+	a.manager.SetCallbacks(
+		func(msg string) { fyne.Do(func() { a.logPanel.AppendInfo(msg) }) },
+		func(msg string) { fyne.Do(func() { a.statusLabel.SetText(msg) }) },
+	)
 	a.tunnelList.SetManager(a.manager)
+	a.tunnelList.SetConfig(cfg)
 
 	// Reset button states and status label
 	a.startBtn.Enable()
@@ -363,405 +298,7 @@ func (a *App) onReload() {
 
 	a.logPanel.AppendInfo("Config reloaded")
 	a.tunnelList.Refresh()
-}
-
-// TunnelList displays unified port forwards with traffic stats
-type TunnelList struct {
-	cfg     *config.Config
-	manager *tunnel.Manager
-	list    *widget.List
-	data    []config.TunnelConfig
-	enabled map[int]bool // track which tunnels are enabled by index
-	mu      sync.Mutex
-}
-
-func statusColor(status tunnel.ForwardStatus) color.Color {
-	switch status {
-	case tunnel.StatusConnected:
-		return color.NRGBA{G: 180, A: 255} // Green
-	case tunnel.StatusError:
-		return color.NRGBA{R: 200, A: 255} // Red
-	case tunnel.StatusConnecting:
-		return color.NRGBA{R: 200, G: 160, A: 255} // Yellow
-	default:
-		return color.NRGBA{R: 100, G: 100, B: 100, A: 255} // Gray
-	}
-}
-
-func NewTunnelList(cfg *config.Config, mgr *tunnel.Manager) *TunnelList {
-	tl := &TunnelList{cfg: cfg, manager: mgr, enabled: make(map[int]bool)}
-	tl.data = cfg.Tunnels
-	// Initialize all tunnels as enabled
-	for i := range tl.data {
-		tl.enabled[i] = true
-	}
-	tl.list = widget.NewList(
-		func() int { return len(tl.data) },
-		func() fyne.CanvasObject {
-			// Layout: checkbox | dot | name (port) ... status | ↑ rate (total) | ↓ rate (total)
-			check := widget.NewCheck("", nil)
-			dot := canvas.NewCircle(color.Gray{Y: 100})
-			nameLabel := widget.NewLabel("Name (12345)")
-			nameLabel.TextStyle = fyne.TextStyle{Bold: true}
-			statusLabel := widget.NewLabel("Disconnected")
-			trafficLabel := widget.NewLabel("↑ 0 B/s (0 B) | ↓ 0 B/s (0 B)")
-
-			topRow := container.NewHBox(
-				nameLabel,
-				layout.NewSpacer(),
-				statusLabel,
-			)
-
-			infoCol := container.NewVBox(
-				topRow,
-				trafficLabel,
-			)
-
-			return container.NewHBox(
-				check,
-				dot,
-				infoCol,
-			)
-		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			if id >= len(tl.data) {
-				return
-			}
-			tc := tl.data[id]
-			box := obj.(*fyne.Container)
-
-			// Get checkbox
-			check := box.Objects[0].(*widget.Check)
-			check.SetChecked(tl.enabled[id])
-			check.OnChanged = func(checked bool) {
-				tl.mu.Lock()
-				tl.enabled[id] = checked
-				tl.mu.Unlock()
-				go tl.toggleTunnel(id, checked)
-			}
-
-			// Get status dot
-			dot := box.Objects[1].(*canvas.Circle)
-
-			// Find matching forward and get status/traffic
-			status := tunnel.StatusDisconnected
-			var rateUp, rateDown float64
-			var totalUp, totalDown int64
-
-			if tl.manager != nil && tl.manager.IsRunning() {
-				for _, fwd := range tl.manager.GetForwards() {
-					if fwd.LocalPort == tc.LocalPort {
-						status = fwd.Status
-						rateUp, rateDown = fwd.Stats.GetRate()
-						totalUp, totalDown = fwd.Stats.GetTotal()
-						break
-					}
-				}
-			}
-
-			// Update dot color based on status
-			dot.FillColor = statusColor(status)
-
-			// Update info column
-			infoCol := box.Objects[2].(*fyne.Container)
-			topRow := infoCol.Objects[0].(*fyne.Container)
-
-			// Update name with port
-			nameLabel := topRow.Objects[0].(*widget.Label)
-			nameLabel.SetText(fmt.Sprintf("%s (%d)", tc.Name, tc.LocalPort))
-
-			// Update status
-			statusLabel := topRow.Objects[2].(*widget.Label)
-			statusLabel.SetText(status.String())
-
-			// Update traffic
-			trafficLabel := infoCol.Objects[1].(*widget.Label)
-			trafficLabel.SetText(
-				fmt.Sprintf("↑ %s (%s) | ↓ %s (%s)",
-					tunnel.FormatRate(rateUp),
-					tunnel.FormatBytes(totalUp),
-					tunnel.FormatRate(rateDown),
-					tunnel.FormatBytes(totalDown),
-				),
-			)
-		},
-	)
-	return tl
-}
-
-// toggleTunnel starts or stops a tunnel based on checkbox state
-func (tl *TunnelList) toggleTunnel(id int, enabled bool) {
-	if tl.manager == nil || !tl.manager.IsRunning() {
-		return
-	}
-
-	tc := tl.data[id]
-	if enabled {
-		// Start tunnel
-		if err := tl.manager.StartTunnel(tc); err != nil {
-			tl.manager.Log(fmt.Sprintf("[Tunnel] Failed to start %s: %v", tc.Name, err))
-		} else {
-			tl.manager.Log(fmt.Sprintf("[Tunnel] %s enabled", tc.Name))
-		}
-	} else {
-		// Stop tunnel
-		tl.manager.StopTunnel(tc.Name)
-		tl.manager.Log(fmt.Sprintf("[Tunnel] %s disabled", tc.Name))
-	}
-	// Refresh UI
-	fyne.Do(func() {
-		tl.list.Refresh()
-	})
-}
-
-func (tl *TunnelList) List() *widget.List { return tl.list }
-
-func (tl *TunnelList) SetManager(mgr *tunnel.Manager) {
-	tl.mu.Lock()
-	defer tl.mu.Unlock()
-	tl.manager = mgr
-}
-
-func (tl *TunnelList) Refresh() {
-	tl.mu.Lock()
-	defer tl.mu.Unlock()
-	tl.data = tl.cfg.Tunnels
-	tl.list.Refresh()
-}
-
-// LogLevel represents the severity level of log messages
-type LogLevel int
-
-const (
-	LogLevelDebug LogLevel = iota
-	LogLevelInfo
-	LogLevelWarn
-	LogLevelError
-)
-
-var logLevelNames = map[LogLevel]string{
-	LogLevelDebug: "DEBUG",
-	LogLevelInfo:  "INFO",
-	LogLevelWarn:  "WARN",
-	LogLevelError: "ERROR",
-}
-
-var logLevelPrefixes = map[LogLevel]string{
-	LogLevelDebug: "DEBUG",
-	LogLevelInfo:  "INFO ",
-	LogLevelWarn:  "WARN ",
-	LogLevelError: "ERROR",
-}
-
-type logEntry struct {
-	level   LogLevel
-	message string
-}
-
-// getGoroutineID returns the current goroutine ID
-func getGoroutineID() int {
-	var buf [64]byte
-	n := runtime.Stack(buf[:], false)
-	// Stack format: "goroutine 1 [running]:\n..."
-	s := string(buf[:n])
-	s = s[len("goroutine "):]
-	s = s[:strings.IndexByte(s, ' ')]
-	id := 0
-	for _, c := range s {
-		id = id*10 + int(c-'0')
-	}
-	return id
-}
-
-// LogPanel displays connection logs with level filtering and clean support
-// It implements io.Writer so it can be used as log.SetOutput target
-type LogPanel struct {
-	entry       *widget.Entry
-	levelSelect *widget.Select
-	cleanBtn    *widget.Button
-	mu          sync.Mutex
-	entries     []logEntry // typed entries with level info
-	logFile     *os.File
-	minLevel    LogLevel
-}
-
-func NewLogPanel() *LogPanel {
-	lp := &LogPanel{
-		entry:    widget.NewMultiLineEntry(),
-		minLevel: LogLevelDebug,
-	}
-	lp.entry.Wrapping = fyne.TextWrapWord
-	lp.entry.TextStyle = fyne.TextStyle{Monospace: true}
-
-	// Level selector
-	lp.levelSelect = widget.NewSelect([]string{
-		logLevelNames[LogLevelDebug],
-		logLevelNames[LogLevelInfo],
-		logLevelNames[LogLevelWarn],
-		logLevelNames[LogLevelError],
-	}, func(s string) {
-		for lvl, name := range logLevelNames {
-			if name == s {
-				lp.Append(LogLevelInfo, fmt.Sprintf("UI | Log level changed to %s", s))
-				lp.SetMinLevel(lvl)
-				break
-			}
-		}
-	})
-	lp.levelSelect.SetSelected(logLevelNames[LogLevelDebug])
-
-	// Clean button
-	lp.cleanBtn = widget.NewButton("Clear", lp.Clean)
-
-	lp.entry.OnChanged = func(s string) {
-		// Prevent user editing - restore original text
-		lp.mu.Lock()
-		defer lp.mu.Unlock()
-		rendered := lp.renderEntries()
-		fyne.Do(func() {
-			if lp.entry.Text != rendered {
-				lp.entry.SetText(rendered)
-			}
-		})
-		// Delay cursor update to ensure layout is calculated
-		go func() {
-			time.Sleep(10 * time.Millisecond)
-			fyne.Do(func() {
-				if lp.entry.Text == rendered {
-					rowCount := strings.Count(rendered, "\n") + 1
-					lp.entry.CursorRow = rowCount - 1
-					lp.entry.CursorColumn = 0
-					canvas.Refresh(lp.entry)
-				}
-			})
-		}()
-	}
-
-	// Create logs directory and file
-	os.MkdirAll("logs", 0755)
-	logPath := fmt.Sprintf("logs/ssh-tunnel-%s.log", time.Now().Format("2006-01-02"))
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err == nil {
-		lp.logFile = f
-	}
-
-	return lp
-}
-
-func (lp *LogPanel) Entry() *widget.Entry { return lp.entry }
-
-func (lp *LogPanel) LevelSelect() *widget.Select { return lp.levelSelect }
-
-func (lp *LogPanel) CleanButton() *widget.Button { return lp.cleanBtn }
-
-// Write implements io.Writer - allows using LogPanel as log.SetOutput target
-func (lp *LogPanel) Write(p []byte) (n int, err error) {
-	msg := strings.TrimSuffix(strings.TrimRight(string(p), "\r\n"), "\n")
-	if msg == "" {
-		return len(p), nil
-	}
-	lp.Append(LogLevelInfo, msg)
-	return len(p), nil
-}
-
-// Append adds a new log message with the specified level
-func (lp *LogPanel) Append(level LogLevel, msg string) {
-	lp.mu.Lock()
-	defer lp.mu.Unlock()
-
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	levelName := logLevelPrefixes[level]
-	line := fmt.Sprintf("%s | %s | %s", timestamp, levelName, msg)
-
-	lp.entries = append(lp.entries, logEntry{level: level, message: line})
-
-	// Keep last 500 lines
-	if len(lp.entries) > 500 {
-		lp.entries = lp.entries[len(lp.entries)-500:]
-	}
-
-	// Write to log file (all levels always written to file)
-	if lp.logFile != nil {
-		lp.logFile.WriteString(line + "\n")
-		lp.logFile.Sync()
-	}
-
-	// Only update UI if message passes current level filter
-	if level >= lp.minLevel {
-		rendered := lp.renderEntriesUnlocked()
-		fyne.Do(func() {
-			lp.entry.SetText(rendered)
-		})
-		// Delay cursor update to ensure layout is calculated
-		go func() {
-			time.Sleep(10 * time.Millisecond)
-			fyne.Do(func() {
-				rowCount := strings.Count(rendered, "\n") + 1
-				lp.entry.CursorRow = rowCount - 1
-				lp.entry.CursorColumn = 0
-				canvas.Refresh(lp.entry)
-			})
-		}()
-	}
-}
-
-// AppendInfo is convenience method for Info-level messages (backward compat)
-func (lp *LogPanel) AppendInfo(msg string) {
-	lp.Append(LogLevelInfo, msg)
-}
-
-// SetMinLevel changes the minimum log level and refreshes display
-func (lp *LogPanel) SetMinLevel(level LogLevel) {
-	lp.mu.Lock()
-	defer lp.mu.Unlock()
-
-	lp.minLevel = level
-
-	rendered := lp.renderEntriesUnlocked()
-	fyne.Do(func() {
-		lp.entry.SetText(rendered)
-	})
-	// Delay cursor update to ensure layout is calculated
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		fyne.Do(func() {
-			rowCount := strings.Count(rendered, "\n") + 1
-			lp.entry.CursorRow = rowCount - 1
-			lp.entry.CursorColumn = 0
-			canvas.Refresh(lp.entry)
-		})
-	}()
-}
-
-// Clear removes all log entries
-func (lp *LogPanel) Clean() {
-	lp.mu.Lock()
-	defer lp.mu.Unlock()
-
-	lp.entries = nil
-	fyne.Do(func() {
-		lp.entry.SetText("")
-	})
-}
-
-func (lp *LogPanel) renderEntriesUnlocked() string {
-	var visible []string
-	for _, e := range lp.entries {
-		if e.level >= lp.minLevel {
-			visible = append(visible, e.message)
-		}
-	}
-	return strings.Join(visible, "\n")
-}
-
-func (lp *LogPanel) renderEntries() string {
-	return lp.renderEntriesUnlocked()
-}
-
-func (lp *LogPanel) Close() {
-	if lp.logFile != nil {
-		lp.logFile.Close()
-	}
+	a.statsBar.update(a.manager, a.cfg)
 }
 
 // Helpers

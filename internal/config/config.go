@@ -63,37 +63,43 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// validate checks that all required fields are present. It does not mutate
+// the config; default values are filled by applyDefaults.
 func (c *Config) validate() error {
 	if c.SSH.Host == "" {
 		return fmt.Errorf("ssh.host is required")
 	}
-	if c.SSH.Port == 0 {
-		c.SSH.Port = 22
-	}
 	if c.SSH.User == "" {
 		return fmt.Errorf("ssh.user is required")
-	}
-	if c.SSH.Auth.Method == "" {
-		c.SSH.Auth.Method = "password"
 	}
 	for i, t := range c.Tunnels {
 		if t.LocalPort == 0 {
 			return fmt.Errorf("tunnel[%d]: local_port is required", i)
 		}
-		if t.RemoteHost == "" {
-			c.Tunnels[i].RemoteHost = "127.0.0.1"
-		}
-		if t.RemotePort == 0 {
-			c.Tunnels[i].RemotePort = t.LocalPort
-		}
-		if t.Name == "" {
-			c.Tunnels[i].Name = fmt.Sprintf("Tunnel %d->%d", t.LocalPort, t.RemotePort)
-		}
 	}
 	return nil
 }
 
+// applyDefaults fills in optional values that were left unset, so the rest of
+// the program can rely on them being populated.
 func (c *Config) applyDefaults() {
+	if c.SSH.Port == 0 {
+		c.SSH.Port = 22
+	}
+	if c.SSH.Auth.Method == "" {
+		c.SSH.Auth.Method = "password"
+	}
+	for i := range c.Tunnels {
+		if c.Tunnels[i].RemoteHost == "" {
+			c.Tunnels[i].RemoteHost = "127.0.0.1"
+		}
+		if c.Tunnels[i].RemotePort == 0 {
+			c.Tunnels[i].RemotePort = c.Tunnels[i].LocalPort
+		}
+		if c.Tunnels[i].Name == "" {
+			c.Tunnels[i].Name = fmt.Sprintf("Tunnel %d->%d", c.Tunnels[i].LocalPort, c.Tunnels[i].RemotePort)
+		}
+	}
 	if c.Options.ServerAliveInterval == 0 {
 		c.Options.ServerAliveInterval = 15
 	}
@@ -130,7 +136,7 @@ func (c *Config) ReadKeyFile() ([]byte, error) {
 	if c.SSH.Auth.KeyFile == "" {
 		return nil, nil
 	}
-	path := expandPath(c.SSH.Auth.KeyFile)
+	path := c.resolvePath(c.SSH.Auth.KeyFile)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read key file %s: %w", path, err)
@@ -154,4 +160,15 @@ func expandPath(path string) string {
 		}
 	}
 	return path
+}
+
+// Save marshals the config back to YAML and writes it to the given path. The
+// unexported baseDir field is omitted automatically by the yaml encoder, so
+// unchanged fields (SSH, options, other tunnels) are preserved.
+func (c *Config) Save(path string) error {
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	return os.WriteFile(path, data, 0644)
 }

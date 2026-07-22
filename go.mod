@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	fyne.io/fyne/v2 v2.7.4
+	github.com/getlantern/systray v1.2.2
 	golang.org/x/crypto v0.53.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -24,7 +25,6 @@ require (
 	github.com/getlantern/hex v0.0.0-20190417191902-c6586a6fe0b7 // indirect
 	github.com/getlantern/hidden v0.0.0-20190325191715-f02dbb02be55 // indirect
 	github.com/getlantern/ops v0.0.0-20190325191751-d70cb0d6f85f // indirect
-	github.com/getlantern/systray v1.2.2 // indirect
 	github.com/go-gl/gl v0.0.0-20231021071112-07e5d0ea2e71 // indirect
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20240506104042-037f3cc74f2a // indirect
 	github.com/go-stack/stack v1.8.0 // indirect

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -46,7 +47,6 @@ type Forward struct {
 	mu      sync.Mutex
 	ln      net.Listener
 	clients []net.Conn
-	stopCh  chan struct{}
 	logger  *log.Logger
 	LogFunc func(string) // callback for UI log panel
 }
@@ -59,7 +59,6 @@ func NewForward(name string, localPort int, remoteHost string, remotePort int, l
 		RemotePort: remotePort,
 		Status:     StatusDisconnected,
 		Stats:      NewTrafficStats(),
-		stopCh:     make(chan struct{}),
 		logger:     logger,
 	}
 }
@@ -133,11 +132,24 @@ func (f *Forward) handleConn(sshClient *ssh.Client, localConn net.Conn) {
 	defer localConn.Close()
 
 	remoteAddr := fmt.Sprintf("%s:%d", f.RemoteHost, f.RemotePort)
-	remoteConn, err := sshClient.Dial("tcp", remoteAddr)
-	if err != nil {
-		f.log(fmt.Sprintf("[%s] Dial remote %s failed: %v", f.Name, remoteAddr, err))
-		f.removeClient(localConn)
-		return
+
+	// Retry dial with backoff — transient network hiccups shouldn't kill the connection.
+	var remoteConn net.Conn
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		conn, err := sshClient.Dial("tcp", remoteAddr)
+		if err == nil {
+			remoteConn = conn
+			break
+		}
+		if attempt < maxRetries {
+			f.log(fmt.Sprintf("[%s] Dial remote %s failed (attempt %d/%d): %v, retrying...", f.Name, remoteAddr, attempt, maxRetries, err))
+			time.Sleep(time.Duration(attempt) * time.Second)
+		} else {
+			f.log(fmt.Sprintf("[%s] Dial remote %s failed after %d attempts: %v", f.Name, remoteAddr, maxRetries, err))
+			f.removeClient(localConn)
+			return
+		}
 	}
 	defer remoteConn.Close()
 
@@ -176,11 +188,6 @@ func (f *Forward) removeClient(conn net.Conn) {
 func (f *Forward) Stop() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-
-	if f.stopCh != nil {
-		close(f.stopCh)
-		f.stopCh = make(chan struct{})
-	}
 
 	if f.ln != nil {
 		f.ln.Close()

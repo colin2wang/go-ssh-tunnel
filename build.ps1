@@ -6,18 +6,25 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Ensure GOPATH/bin is in PATH (for go-winres and other Go tools)
+$gopathBin = "$env:GOPATH\bin"
+if (-not $gopathBin -or $gopathBin -eq "\bin") { $gopathBin = "$env:USERPROFILE\go\bin" }
+if ($env:PATH -notlike "*$gopathBin*") {
+    $env:PATH = "$gopathBin;$env:PATH"
+}
+
 Write-Host "=== SSH Tunnel Builder ===" -ForegroundColor Cyan
 Write-Host ""
 
 # 1. Create directories
-Write-Host "[1/5] Creating directories..." -ForegroundColor Yellow
+Write-Host "[1/4] Creating directories..." -ForegroundColor Yellow
 if (-not (Test-Path $DeployDir)) {
     New-Item -ItemType Directory -Path $DeployDir -Force | Out-Null
     Write-Host "  Created: $DeployDir"
 }
 
 # 2. Generate Windows resource (icon)
-Write-Host "[2/5] Generating Windows resource..." -ForegroundColor Yellow
+Write-Host "[2/4] Generating Windows resource..." -ForegroundColor Yellow
 Push-Location "cmd\ssh-tunnel"
 go-winres simply --icon "../../transfor.ico" --manifest gui --file-description "SSH Tunnel Manager" --product-name "SSH Tunnel Manager" --arch amd64
 Pop-Location
@@ -28,7 +35,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # 3. Build binary
-Write-Host "[3/5] Building binary..." -ForegroundColor Yellow
+Write-Host "[3/4] Building binary..." -ForegroundColor Yellow
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 $ldflags = "-s -w -H windowsgui -X 'main.version=$Version' -X 'main.buildTime=$timestamp'"
 
@@ -40,7 +47,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # 4. Create config files
-Write-Host "[4/5] Creating config files..." -ForegroundColor Yellow
+Write-Host "[4/4] Creating config files..." -ForegroundColor Yellow
 
 # Copy config.yaml: use existing if present, otherwise use main config
 if (Test-Path "$DeployDir\config.yaml") {
@@ -63,7 +70,7 @@ if (-not (Test-Path "$DeployDir\password.txt")) {
 
 # Summary
 Write-Host ""
-Write-Host "[5/5] Build complete!" -ForegroundColor Green
+Write-Host "Build complete!" -ForegroundColor Green
 Write-Host ""
 
 $size = (Get-Item "$DeployDir\ssh-tunnel.exe").Length / 1MB
