@@ -2,11 +2,18 @@
 .idea/
 
 # Dist and Binaries
-dist/
+build/bin
 *.exe
 
 # Config Original
 configs/config.yaml
+
+# Node.js
+frontend/node_modules
+frontend/dist
+
+# Wails
+frontend/package.json.md5
 
 # Generated resource files
 *.syso
@@ -19,6 +26,5 @@ logs/
 .atomcode/
 .codebuddy/
 
-
-
-
+# Commit Message
+COMMIT.md

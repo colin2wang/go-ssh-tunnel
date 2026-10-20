@@ -1,7 +1,6 @@
 param(
-    [string]$Version = "1.0.9",
-    [string]$Output = "dist\ssh-tunnel.exe",
-    [string]$DeployDir = "dist"
+    [string]$Version = "1.1.0",
+    [string]$DeployDir = "build\bin"
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,41 +12,36 @@ if ($env:PATH -notlike "*$gopathBin*") {
     $env:PATH = "$gopathBin;$env:PATH"
 }
 
+# Ensure pnpm is used for the frontend build (wails.json runs `pnpm install`)
+if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+    Write-Host "pnpm not found! Install it first: npm install -g pnpm" -ForegroundColor Red
+    exit 1
+}
+
 Write-Host "=== SSH Tunnel Builder ===" -ForegroundColor Cyan
 Write-Host ""
 
 # 1. Create directories
-Write-Host "[1/4] Creating directories..." -ForegroundColor Yellow
+Write-Host "[1/3] Creating directories..." -ForegroundColor Yellow
 if (-not (Test-Path $DeployDir)) {
     New-Item -ItemType Directory -Path $DeployDir -Force | Out-Null
     Write-Host "  Created: $DeployDir"
 }
 
-# 2. Generate Windows resource (icon)
-Write-Host "[2/4] Generating Windows resource..." -ForegroundColor Yellow
-Push-Location "cmd\ssh-tunnel"
-go-winres simply --icon "../../transfor.ico" --manifest gui --file-description "SSH Tunnel Manager" --product-name "SSH Tunnel Manager" --arch amd64
-Pop-Location
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Resource generation failed!" -ForegroundColor Red
-    exit 1
-}
-
-# 3. Build binary
-Write-Host "[3/4] Building binary..." -ForegroundColor Yellow
+# 2. Build frontend + binary with Wails (output stays in build\bin)
+Write-Host "[2/3] Building with wails..." -ForegroundColor Yellow
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 $ldflags = "-s -w -H windowsgui -X 'main.version=$Version' -X 'main.buildTime=$timestamp'"
 
-go build -ldflags $ldflags -o $Output ./cmd/ssh-tunnel
+wails build -ldflags $ldflags
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Build failed!" -ForegroundColor Red
     exit 1
 }
 
-# 4. Create config files
-Write-Host "[4/4] Creating config files..." -ForegroundColor Yellow
+# 3. Create config files next to the binary
+Write-Host "[3/3] Creating config files..." -ForegroundColor Yellow
 
 # Copy config.yaml: use existing if present, otherwise use main config
 if (Test-Path "$DeployDir\config.yaml") {

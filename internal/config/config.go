@@ -17,10 +17,10 @@ type AuthConfig struct {
 }
 
 type TunnelConfig struct {
-	Name       string `yaml:"name"`
-	LocalPort  int    `yaml:"local_port"`
-	RemoteHost string `yaml:"remote_host"`
-	RemotePort int    `yaml:"remote_port"`
+	Name       string `yaml:"name" json:"name"`
+	LocalPort  int    `yaml:"local_port" json:"local_port"`
+	RemoteHost string `yaml:"remote_host" json:"remote_host"`
+	RemotePort int    `yaml:"remote_port" json:"remote_port"`
 }
 
 type OptionsConfig struct {
@@ -61,6 +61,15 @@ func Load(path string) (*Config, error) {
 
 	cfg.applyDefaults()
 	return cfg, nil
+}
+
+// Default returns an empty config filled with defaults. Used when the config
+// file cannot be loaded but the application should still start (the error is
+// surfaced in the UI and a Reload can pick up a fixed config).
+func Default() *Config {
+	c := &Config{}
+	c.applyDefaults()
+	return c
 }
 
 // validate checks that all required fields are present. It does not mutate
