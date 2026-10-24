@@ -1,53 +1,81 @@
 # SSH Tunnel Manager
 
-A GUI-based SSH tunnel manager built with Go and Fyne. Easily manage multiple port forwarding rules with real-time traffic monitoring.
+A GUI-based SSH tunnel manager built with **Wails v2 + Vue 3 + TypeScript** (Go backend). Manage multiple SSH port-forwarding rules with real-time traffic monitoring and structured logs. Windows-first.
+
+**[简体中文](README.zh-CN.md)** | English
 
 ## Features
 
-- **GUI Interface** - Clean, intuitive interface built with Fyne
-- **Multiple Tunnels** - Manage multiple SSH port forwards simultaneously
-- **Individual Tunnel Control** - Enable/disable tunnels individually with checkboxes
-- **Real-time Traffic** - Monitor upload/download rates and total traffic
-- **System Tray** - Minimize to system tray with Connect/Disconnect/Quit menu
-- **Auto-reconnect** - Keepalive mechanism to maintain connections
-- **Password File** - Secure password storage in separate file (git-ignored)
-- **Configurable** - YAML-based configuration for easy customization
-- **Structured Logs** - Timestamped logs with level indicators (INFO/WARN/ERROR)
+- **Multi-tunnel Management** - Run multiple SSH port forwards simultaneously
+- **Individual Tunnel Control** - Enable/disable each tunnel with a checkbox
+- **Real-time Traffic** - Per-tunnel up/down rates, total bytes, active tunnel count
+- **Auto-reconnect** - Keepalive mechanism with automatic reconnection
+- **Flexible Authentication** - Password file or SSH key (with optional key passphrase)
+- **YAML Configuration** - Easy to edit `config.yaml`, hot-reload from the UI
+- **Structured Logs** - Level-filtered logs (DEBUG/INFO/WARN/ERROR), persisted to `logs/ssh-tunnel-YYYY-MM-DD.log`
 
 ## Screenshot
 
-![SSH Tunnel Manager](docs/screenshot.png)
+![SSH Tunnel Manager main interface](docs/images/main-interface.png)
+
+*Disconnected state — tunnels are configured but stopped.*
+
+![SSH Tunnel Manager connected](docs/images/main-interface-connected.png)
+
+*Connected state — all enabled tunnels are running and listening.*
 
 The main interface features:
-- **Toolbar** - Start, Stop, Reload Config, and Minimize to Tray buttons
-- **Tunnel List** - Each tunnel shows checkbox, name with port, connection status, and traffic stats
-- **Log Panel** - Structured logs with timestamp, level (INFO/ERROR), and messages
-- **Status Bar** - Shows current connection status (Disconnected/Connected)
+- **Toolbar** - Start, Stop, Reload Config, and Add Tunnel buttons
+- **Stats Cards** - UP RATE, DOWN RATE, TOTAL UP, TOTAL DOWN, ACTIVE, and TUNNELS counters
+- **Tunnel List** - Each tunnel shows checkbox, name, port mapping, status, and live traffic stats
+- **Log Panel** - Structured logs with timestamp, level, and message; filterable by level
+- **Status Bar** - Current connection status (Disconnected/Connected)
 
-## Installation
+## Prerequisites
 
-### Download
+- [Go](https://go.dev/) (1.21+)
+- [Node.js](https://nodejs.org/) (LTS) and [pnpm](https://pnpm.io/) (`npm install -g pnpm`)
+- [Wails CLI](https://wails.io/docs/gettingstarted/installation) (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
 
-Download the latest release from the releases page or build from source.
+## Build
 
-### Build from Source
+### Development
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd go-ssh-tunnel
-
-# Build
-.\build.ps1 -Version "v1.0.9"
+wails dev
 ```
 
-The built executable will be in the `dist/` directory.
+Runs the app with frontend hot-reload.
+
+### Release Build
+
+```powershell
+.\build.ps1 -Version "1.1.0"
+```
+
+Requires `pnpm` to be available. The output stays in `build\bin\`:
+
+```
+build\bin\
+├── ssh-tunnel.exe    # Application
+├── config.yaml       # Configuration (kept between builds)
+└── password.txt      # SSH password (edit this!)
+```
+
+> `build.ps1` never deletes an existing `config.yaml` / `password.txt`, so your settings survive rebuilds.
+
+### Testing
+
+```bash
+go test ./...
+```
 
 ## Usage
 
-1. Edit `config.yaml` to configure your SSH server and tunnels
-2. Create `password.txt` with your SSH password (or use SSH key)
+1. Edit `config.yaml` (next to the exe) to configure your SSH server and tunnels
+2. Put your SSH password into `password.txt` (or configure key authentication)
 3. Run `ssh-tunnel.exe`
+4. Click **Start** in the toolbar to connect and start all enabled tunnels
 
 ### Command Line Options
 
@@ -59,9 +87,18 @@ Options:
   -version          Show version information
 ```
 
+### Runtime Files
+
+| Path | Purpose |
+| --- | --- |
+| `config.yaml` | SSH server and tunnel configuration |
+| `password.txt` | SSH password (plain text, keep it private) |
+| `logs/ssh-tunnel-YYYY-MM-DD.log` | Daily log file |
+| `secrets/` | Temporary password/key-passphrase files (auto-deleted, 0700) |
+
 ## Configuration
 
-Edit `config.yaml` to configure your tunnels:
+Edit `config.yaml` (see `configs/config-example.yaml`):
 
 ```yaml
 ssh:
@@ -92,80 +129,58 @@ options:
 
 ### Password Authentication
 
-Create `password.txt` with your SSH password:
-
-```
-your-ssh-password
-```
+Set `auth.method` to `"password"` and put your SSH password in the file named by `password_file` (default `password.txt`).
 
 ### Key Authentication
-
-Set `auth.method` to `"key"` and provide the path to your private key:
 
 ```yaml
 auth:
   method: "key"
   key_file: "~/.ssh/id_rsa"
-  key_passphrase_file: ""  # Leave empty to prompt on connect
+  key_passphrase_file: ""  # Leave empty if the key has no passphrase
 ```
+
+### Adding Tunnels
+
+- **From the UI**: click **Add Tunnel** in the toolbar
+- **From disk**: edit `config.yaml` directly, then click **Reload Config**
 
 ## UI Controls
 
 ### Toolbar
 
-- **Start** - Connect to SSH server and start all enabled tunnels
-- **Stop** - Disconnect from SSH server and stop all tunnels
-- **Reload Config** - Reload configuration file and reset connections
-- **Minimize to Tray** - Hide window to system tray
+- **Start** - Connect to the SSH server and start all enabled tunnels
+- **Stop** - Disconnect and stop all tunnels
+- **Reload Config** - Reload `config.yaml` and reset connections
+- **Add Tunnel** - Add a new tunnel entry
 
 ### Tunnel List
 
 Each tunnel displays:
-- Checkbox to enable/disable individual tunnels
-- Status indicator (Gray=Disconnected, Green=Connected, Red=Error)
-- Tunnel name and port mapping
+- Checkbox to enable/disable the individual tunnel
+- Tunnel name and port mapping (`local -> remote`)
+- Status indicator (Gray = disabled/disconnected, Green = connected, Red = error)
 - Real-time traffic stats: `↑ rate (total) | ↓ rate (total)`
-
-### System Tray
-
-Right-click the tray icon for:
-- **Show Window** - Toggle window visibility
-- **Connect** - Start all tunnels
-- **Disconnect** - Stop all tunnels
-- **Quit** - Exit application
 
 ### Log Panel
 
 - Filter logs by level (DEBUG, INFO, WARN, ERROR)
-- Auto-scrolls to latest entries
-- Structured format: `YYYY-MM-DD HH:MM:SS | LEVEL | Message`
+- Auto-scrolls to the latest entries
+- Format: `YYYY-MM-DD HH:MM:SS | LEVEL | Message`
 
-## Build Output
-
-The build script creates a dist package with:
+## Project Structure
 
 ```
-dist/
-├── ssh-tunnel.exe    # Application
-├── config.yaml       # Configuration
-└── password.txt      # SSH password (create this)
-```
-
-## Version
-
-Version number is defined in `build.ps1`:
-
-```powershell
-param(
-    [string]$Version = "v1.0.9",  # Change default version here
-    ...
-)
-```
-
-Override when building:
-
-```powershell
-.\build.ps1 -Version "v1.1.0"
+go-ssh-tunnel/
+├── main.go               # Wails entry point
+├── internal/
+│   ├── app/              # Wails binding layer (frontend API + events)
+│   ├── tunnel/           # SSH connection & forwarding logic
+│   └── config/           # YAML config read/write
+├── frontend/             # Vue 3 + Vite + TypeScript UI
+├── configs/              # Example configuration
+├── docs/images/          # Screenshots
+└── build.ps1             # Release build script
 ```
 
 ## License
