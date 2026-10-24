@@ -2,7 +2,7 @@
 
 基于 **Wails v2 + Vue 3 + TypeScript**（Go 后端）的图形化 SSH 隧道管理器。集中管理多条 SSH 端口转发规则，实时监控流量与结构化日志。优先支持 Windows。
 
-English | **[简体中文](README.zh-CN.md)**
+简体中文 | **[English](README.zh-CN.md)**
 
 ## 功能特性
 
