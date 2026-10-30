@@ -8,12 +8,12 @@ const props = defineProps<{ stats: Stats | null }>()
 const blocks = computed(() => {
   const s = props.stats
   return [
-    { title: 'UP RATE', value: formatRate(s?.upRate ?? 0) },
-    { title: 'DOWN RATE', value: formatRate(s?.downRate ?? 0) },
-    { title: 'TOTAL UP', value: formatBytes(s?.totalUp ?? 0) },
-    { title: 'TOTAL DOWN', value: formatBytes(s?.totalDown ?? 0) },
-    { title: 'ACTIVE', value: String(s?.active ?? 0) },
-    { title: 'TUNNELS', value: String(s?.tunnels?.length ?? 0) },
+    { title: 'UP RATE', value: formatRate(s?.upRate ?? 0), hot: (s?.upRate ?? 0) > 0 },
+    { title: 'DOWN RATE', value: formatRate(s?.downRate ?? 0), hot: (s?.downRate ?? 0) > 0 },
+    { title: 'TOTAL UP', value: formatBytes(s?.totalUp ?? 0), hot: (s?.totalUp ?? 0) > 0 },
+    { title: 'TOTAL DOWN', value: formatBytes(s?.totalDown ?? 0), hot: (s?.totalDown ?? 0) > 0 },
+    { title: 'ACTIVE', value: String(s?.active ?? 0), hot: (s?.active ?? 0) > 0 },
+    { title: 'TUNNELS', value: String(s?.tunnels?.length ?? 0), hot: false },
   ]
 })
 </script>
@@ -22,7 +22,7 @@ const blocks = computed(() => {
   <div class="stats-bar">
     <div v-for="b in blocks" :key="b.title" class="stat-block">
       <div class="stat-title">{{ b.title }}</div>
-      <div class="stat-value mono">{{ b.value }}</div>
+      <div class="stat-value mono" :class="{ hot: b.hot }">{{ b.value }}</div>
     </div>
   </div>
 </template>
@@ -52,5 +52,10 @@ const blocks = computed(() => {
 .stat-value {
   font-size: 14px;
   margin-top: 2px;
+}
+
+.stat-value.hot {
+  color: var(--green);
+  font-weight: 600;
 }
 </style>

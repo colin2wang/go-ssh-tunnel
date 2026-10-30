@@ -35,6 +35,15 @@ function classFor(e: LogEntry): string {
     default: return 'lvl-info'
   }
 }
+
+function msgTag(e: LogEntry): string | null {
+  const m = e.msg.match(/^\[([^\]]+)\]\s/)
+  return m ? m[1] : null
+}
+
+function msgText(e: LogEntry): string {
+  return e.msg.replace(/^\[[^\]]+\]\s/, '')
+}
 </script>
 
 <template>
@@ -46,9 +55,7 @@ function classFor(e: LogEntry): string {
       </select>
     </div>
     <div ref="body" class="log-body mono">
-      <div v-for="(e, i) in visible" :key="i" :class="classFor(e)">
-        {{ e.time }} | {{ e.level.toUpperCase() }} | {{ e.msg }}
-      </div>
+      <div v-for="(e, i) in visible" :key="i" :class="classFor(e)"><span class="t">{{ e.time }}</span> | <span class="lvl">{{ e.level.toUpperCase() }}</span> | <template v-if="msgTag(e)"><span class="tag">[{{ msgTag(e) }}]</span> </template><span class="m">{{ msgText(e) }}</span></div>
     </div>
   </div>
 </template>
@@ -82,8 +89,15 @@ function classFor(e: LogEntry): string {
   user-select: text;
 }
 
-.lvl-info { color: var(--text); }
+.log-body .t { color: var(--text-dim); }
+.log-body .lvl { font-weight: 600; }
+.log-body .tag { color: var(--cyan); }
+.log-body .m { color: var(--text); }
+
+.lvl-info .lvl { color: var(--blue); }
 .lvl-debug { color: var(--text-dim); }
-.lvl-warn { color: var(--yellow); }
-.lvl-error { color: var(--red); }
+.lvl-debug .lvl { color: var(--gray); }
+.lvl-debug .m { color: var(--text-dim); }
+.lvl-warn .lvl { color: var(--yellow); }
+.lvl-error .lvl { color: var(--red); }
 </style>

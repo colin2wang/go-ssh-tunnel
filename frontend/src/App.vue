@@ -144,15 +144,15 @@ const statusColor = () => {
   <div class="app">
     <header class="toolbar">
       <button class="primary" :disabled="stats?.running || starting" @click="onStart">
-        {{ starting ? 'Connecting…' : '▶ Start' }}
+        <span class="ic ic-start">{{ starting ? '⏳' : '▶' }}</span>{{ starting ? 'Connecting…' : 'Start' }}
       </button>
-      <button :disabled="!stats?.running" @click="onStop">■ Stop</button>
-      <button @click="onReload">⟳ Reload</button>
-      <button @click="openAdd">＋ Add</button>
+      <button :disabled="!stats?.running" @click="onStop"><span class="ic ic-stop">■</span>Stop</button>
+      <button @click="onReload"><span class="ic ic-reload">⟳</span>Reload</button>
+      <button @click="openAdd"><span class="ic ic-add">＋</span>Add</button>
       <div class="spacer"></div>
       <span class="status-label">Status:</span>
       <span class="dot" :style="{ background: statusColor() }"></span>
-      <span class="status mono">{{ stats?.status ?? 'Disconnected' }}</span>
+      <span class="status mono" :style="{ color: statusColor() }">{{ stats?.status ?? 'Disconnected' }}</span>
     </header>
 
     <StatsBar :stats="stats" />
@@ -224,7 +224,19 @@ const statusColor = () => {
 
 .status {
   min-width: 120px;
+  font-weight: 600;
 }
+
+.toolbar .ic {
+  margin-right: 5px;
+}
+
+.ic-start { color: #b7f5c6; }
+.ic-stop { color: var(--red); }
+.ic-reload { color: var(--yellow); }
+.ic-add { color: var(--green); font-weight: 600; }
+
+button:disabled .ic { color: inherit; }
 
 .split {
   flex: 1;

@@ -32,6 +32,14 @@ function isEnabled(t: TunnelConfig): boolean {
   return props.enabled[t.name] ?? true
 }
 
+function hotUp(t: TunnelConfig): boolean {
+  return (statFor(t)?.rateUp ?? 0) > 0 || (statFor(t)?.totalUp ?? 0) > 0
+}
+
+function hotDown(t: TunnelConfig): boolean {
+  return (statFor(t)?.rateDown ?? 0) > 0 || (statFor(t)?.totalDown ?? 0) > 0
+}
+
 const running = computed(() => props.stats?.running ?? false)
 </script>
 
@@ -50,20 +58,20 @@ const running = computed(() => props.stats?.running ?? false)
       <div class="info">
         <div class="name">{{ t.name }}</div>
         <div class="ports mono">
-          127.0.0.1:{{ t.local_port }} → {{ t.remote_host }}:{{ t.remote_port }}
+          <span>127.0.0.1:{{ t.local_port }}</span> <span class="arrow">→</span> <span>{{ t.remote_host }}:{{ t.remote_port }}</span>
         </div>
       </div>
       <div class="traffic mono">
-        <div>↑ {{ formatRate(statFor(t)?.rateUp ?? 0) }}</div>
-        <div>↓ {{ formatRate(statFor(t)?.rateDown ?? 0) }}</div>
+        <div :class="{ 'up-hot': hotUp(t) }"><span class="arr-up">↑</span> {{ formatRate(statFor(t)?.rateUp ?? 0) }}</div>
+        <div :class="{ 'down-hot': hotDown(t) }"><span class="arr-down">↓</span> {{ formatRate(statFor(t)?.rateDown ?? 0) }}</div>
       </div>
       <div class="totals mono">
-        <div>↑ {{ formatBytes(statFor(t)?.totalUp ?? 0) }}</div>
-        <div>↓ {{ formatBytes(statFor(t)?.totalDown ?? 0) }}</div>
+        <div :class="{ 'up-hot': hotUp(t) }"><span class="arr-up">↑</span> {{ formatBytes(statFor(t)?.totalUp ?? 0) }}</div>
+        <div :class="{ 'down-hot': hotDown(t) }"><span class="arr-down">↓</span> {{ formatBytes(statFor(t)?.totalDown ?? 0) }}</div>
       </div>
       <div class="actions">
-        <button class="danger-text" title="Edit" @click="emit('edit', t)">✎</button>
-        <button class="danger-text" title="Delete" @click="emit('delete', t)">✕</button>
+        <button class="icon-btn" title="Edit" @click="emit('edit', t)">✎</button>
+        <button class="icon-btn danger-text" title="Delete" @click="emit('delete', t)">✕</button>
       </div>
     </div>
   </div>
@@ -127,6 +135,17 @@ const running = computed(() => props.stats?.running ?? false)
   color: var(--text-dim);
 }
 
+.ports .arrow {
+  color: var(--blue);
+  font-weight: 600;
+}
+
+.up-hot { color: var(--green); }
+.down-hot { color: var(--blue); }
+
+.arr-up { color: var(--green); }
+.arr-down { color: var(--blue); }
+
 .traffic, .totals {
   font-size: 11px;
   color: var(--text-dim);
@@ -137,5 +156,24 @@ const running = computed(() => props.stats?.running ?? false)
 .actions {
   display: flex;
   flex-shrink: 0;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 2px 6px;
+}
+
+.icon-btn:hover {
+  color: var(--blue);
+}
+
+.icon-btn.danger-text:hover {
+  color: var(--red);
+}
+
+.chk {
+  accent-color: var(--accent);
 }
 </style>
