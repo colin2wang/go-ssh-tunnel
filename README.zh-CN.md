@@ -16,13 +16,21 @@
 
 ## 界面截图
 
-![SSH 隧道管理器主界面](docs/images/main-interface.png)
+![SSH 隧道管理器已连接](docs/images/interface-connected.png)
 
-*未连接状态 —— 隧道已配置但未启动。*
+*已连接状态 —— 所有已启用的隧道正在运行并监听（ACTIVE 7 / TUNNELS 7），日志面板输出各隧道的监听信息。*
 
-![SSH 隧道管理器已连接](docs/images/main-interface-connected.png)
+![SSH 隧道管理器单条隧道开关](docs/images/interface-tunnel-toggle.png)
 
-*已连接状态 —— 所有已启用的隧道正在运行并监听。*
+*单条隧道控制 —— 取消勾选隧道（Emacs Server、ASR API、PubAnalyzeAPI）后立即禁用，ACTIVE 降为 4，日志记录 `Tunnel | ... disabled`。*
+
+![SSH 隧道管理器未连接](docs/images/interface-disconnected.png)
+
+*未连接状态 —— 点击 Stop 后所有隧道停止（ACTIVE 0），状态栏显示 Disconnected。*
+
+![SSH 隧道管理器添加隧道](docs/images/interface-add-tunnel.png)
+
+*添加隧道对话框 —— 填写隧道名称、本地端口、远程主机和远程端口后点击 Save。*
 
 主界面包括：
 - **工具栏** - Start（启动）、Stop（停止）、Reload Config（重载配置）、Add Tunnel（添加隧道）

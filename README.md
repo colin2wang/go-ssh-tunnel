@@ -16,13 +16,21 @@ A GUI-based SSH tunnel manager built with **Wails v2 + Vue 3 + TypeScript** (Go 
 
 ## Screenshot
 
-![SSH Tunnel Manager main interface](docs/images/main-interface.png)
+![SSH Tunnel Manager connected](docs/images/interface-connected.png)
 
-*Disconnected state — tunnels are configured but stopped.*
+*Connected state — all enabled tunnels are running and listening (ACTIVE 7 / TUNNELS 7), with per-tunnel listening logs in the panel.*
 
-![SSH Tunnel Manager connected](docs/images/main-interface-connected.png)
+![SSH Tunnel Manager tunnel toggle](docs/images/interface-tunnel-toggle.png)
 
-*Connected state — all enabled tunnels are running and listening.*
+*Individual tunnel control — unchecking a tunnel (Emacs Server, ASR API, PubAnalyzeAPI) disables it immediately; ACTIVE drops to 4 and the log records `Tunnel | ... disabled`.*
+
+![SSH Tunnel Manager disconnected](docs/images/interface-disconnected.png)
+
+*Disconnected state — after clicking Stop, all tunnels are stopped (ACTIVE 0) and the status bar shows Disconnected.*
+
+![SSH Tunnel Manager add tunnel](docs/images/interface-add-tunnel.png)
+
+*Add Tunnel dialog — fill in the tunnel name, local port, remote host and remote port, then click Save.*
 
 The main interface features:
 - **Toolbar** - Start, Stop, Reload Config, and Add Tunnel buttons
